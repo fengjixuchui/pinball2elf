@@ -51,17 +51,31 @@ namespace PROBE_CONTROL{
 
 typedef enum {
   PROBE_EVENT_INVALID = 0,
-  PROBE_EVENT_START,
-  PROBE_EVENT_STOP,
+  PROBE_EVENT_RSTART,
+  PROBE_EVENT_RSTOP,
+  PROBE_EVENT_IDELTASTOP,
   PROBE_EVENT_ISTART,
-  PROBE_EVENT_ISTOP
+  PROBE_EVENT_ISTOP,
+  PROBE_EVENT_PCDELTASTOP,
+  PROBE_EVENT_PCSTART,
+  PROBE_EVENT_PCSTOP
 }PROBE_EVENT_TYPE;
+
 typedef pair<PROBE_EVENT_TYPE,UINT64> IEPAIR;
 typedef list<IEPAIR> IELIST;
 typedef IELIST::iterator IELISTITER;
 
 static IEPAIR istart_pair;
 static IEPAIR istop_pair;
+static IEPAIR idelta_pair;
+
+typedef pair<UINT64,UINT64> PCEPAIR;
+typedef list<PCEPAIR> PCELIST;
+typedef PCELIST::iterator PCELISTITER;
+
+static PCEPAIR pcstart_pair;
+static PCEPAIR pcstop_pair;
+static PCEPAIR pcdelta_pair;
 
 typedef struct _RINFO
 {
@@ -86,14 +100,14 @@ static PROBE_CONTROL_HANDLER UserCallBack = NULL;
   {
       switch(e)
       {
-        case PROBE_EVENT_START:
+        case PROBE_EVENT_RSTART:
         {
-          return "start";
+          return "RTNstart";
           break;
         }
-        case PROBE_EVENT_STOP:
+        case PROBE_EVENT_RSTOP:
         {
-          return "stop";
+          return "RTNstop";
           break;
         }
         case PROBE_EVENT_ISTART:
@@ -101,9 +115,29 @@ static PROBE_CONTROL_HANDLER UserCallBack = NULL;
           return "istart";
           break;
         }
+        case PROBE_EVENT_IDELTASTOP:
+        {
+          return "ideltastop";
+          break;
+        }
         case PROBE_EVENT_ISTOP:
         {
           return "istop";
+          break;
+        }
+        case PROBE_EVENT_PCSTART:
+        {
+          return "pcstart";
+          break;
+        }
+        case PROBE_EVENT_PCDELTASTOP:
+        {
+          return "pcdeltastop";
+          break;
+        }
+        case PROBE_EVENT_PCSTOP:
+        {
+          return "pcstop";
           break;
         }
         default:
@@ -146,13 +180,13 @@ static PROBE_CONTROL_HANDLER UserCallBack = NULL;
    return FALSE;
   }
 
-static VOID MyProbe(UINT32 i)
+static VOID MyRTNProbe(UINT32 i)
   {
     if (i==RCOUNT) return; // not a user-specifed probe-point
 
     RINFO *trinfo = rinfo[i];
     ASSERTX(trinfo);
-    //if(pbverbose) cerr << " MyProbe " << trinfo->name << endl;
+    //if(pbverbose) cerr << " MyRTNProbe " << trinfo->name << endl;
     ATOMIC::OPS::Increment<UINT64>
       (&trinfo->count,1);
     //if(pbverbose) cerr << " exec_count " << trinfo->count << endl;
@@ -182,7 +216,7 @@ class PROBECONTROL
       "pintool",
       "probecontrol:in",
       "",
-      "File with region specification (one per line):\n\t<roispec>:<count>; roispec: <event>,<rtnname>|<hexaddr>; event: 'start'|'stop'; rtnname: STRING; hexaddr:HEXNUMBER"
+      "File with region specification (one per line):\n\t<roispec>:<count>; roispec: <event>,<rtnname>|<hexaddr>; event: 'RTNstart'|'RTNstop'; rtnname: STRING; hexaddr:HEXNUMBER"
       ),
     _rspecVerboseKnob( KNOB_MODE_WRITEONCE,
       "pintool",
@@ -211,6 +245,34 @@ class PROBECONTROL
     {
       return istop_pair.second;
     }
+    UINT64 IdeltaCount()
+    {
+      return idelta_pair.second;
+    }
+    UINT64 PCstartValue()
+    {
+      return pcstart_pair.first;
+    }
+    UINT64 PCstartCount()
+    {
+      return pcstart_pair.second;
+    }
+    UINT64 PCstopValue()
+    {
+      return pcstop_pair.first;
+    }
+    UINT64 PCstopCount()
+    {
+      return pcstop_pair.second;
+    }
+    UINT64 PCdeltastopValue()
+    {
+      return pcdelta_pair.first;
+    }
+    UINT64 PCdeltastopCount()
+    {
+      return pcdelta_pair.second;
+    }
   private:   
   KNOB<string> _rspecInKnob;
   KNOB<BOOL> _rspecVerboseKnob;
@@ -237,6 +299,8 @@ class PROBECONTROL
     PROBE_EVENT_TYPE event;
     string ecountstr;
     UINT64 ecount;
+    string evaluestr;
+    UINT64 evalue;
 
     while(true)
     {
@@ -274,16 +338,20 @@ class PROBECONTROL
       ASSERT(!field.empty(), "Empty event field.");
       eventstr = field;
 
-      if (strcmp(eventstr.c_str(),"start") == 0) event = PROBE_EVENT_START;
-      else if (strcmp(eventstr.c_str(),"stop") == 0) event = PROBE_EVENT_STOP;
+      if (strcmp(eventstr.c_str(),"RTNstart") == 0) event = PROBE_EVENT_RSTART;
+      else if (strcmp(eventstr.c_str(),"RTNstop") == 0) event = PROBE_EVENT_RSTOP;
       else if (strcmp(eventstr.c_str(),"istart") == 0) event = PROBE_EVENT_ISTART;
       else if (strcmp(eventstr.c_str(),"istop") == 0) event = PROBE_EVENT_ISTOP;
+      else if (strcmp(eventstr.c_str(),"ideltastop") == 0) event = PROBE_EVENT_IDELTASTOP;
+      else if (strcmp(eventstr.c_str(),"pcstart") == 0) event = PROBE_EVENT_PCSTART;
+      else if (strcmp(eventstr.c_str(),"pcstop") == 0) event = PROBE_EVENT_PCSTOP;
+      else if (strcmp(eventstr.c_str(),"pcdeltastop") == 0) event = PROBE_EVENT_PCDELTASTOP;
       else ASSERT(FALSE, "Invalid event field."+eventstr);
 
       switch(event)
       {
-        case PROBE_EVENT_START:
-        case PROBE_EVENT_STOP:
+        case PROBE_EVENT_RSTART:
+        case PROBE_EVENT_RSTOP:
         {
           field.clear();
           getline(s, field, ':');
@@ -314,6 +382,7 @@ class PROBECONTROL
         } 
         case PROBE_EVENT_ISTART:
         case PROBE_EVENT_ISTOP:
+        case PROBE_EVENT_IDELTASTOP:
         {
           field.clear();
           getline(s, field, ':');
@@ -338,6 +407,45 @@ class PROBECONTROL
               ASSERTX(0);
             }
             istop_pair = iepair;
+          }
+          if (event == PROBE_EVENT_IDELTASTOP)
+          {
+            if(istop_pair.first != PROBE_EVENT_INVALID)
+            {
+              cerr << "Only one ideltastop event allowed, second seen." << endl;
+              ASSERTX(0);
+            }
+            idelta_pair = iepair;
+          }
+          break;
+        } 
+
+        case PROBE_EVENT_PCSTART:
+        case PROBE_EVENT_PCSTOP:
+        case PROBE_EVENT_PCDELTASTOP:
+        {
+          field.clear();
+          getline(s, field, ':');
+          evaluestr = field;
+          evalue=strtol(evaluestr.c_str(),NULL,16);
+          if(pbverbose) cerr << "evaluestr " << evaluestr  << " evalue " << hex << evalue << endl;
+          field.clear();
+          getline(s, field, ':');
+          ecountstr = field;
+          ecount=atol(ecountstr.c_str());
+          if(pbverbose) cerr << "ecountstr " << ecountstr  << " ecount " << dec << ecount << endl;
+          PCEPAIR pcepair = make_pair(evalue,ecount);
+          if (event == PROBE_EVENT_PCSTART)
+          {
+            pcstart_pair = pcepair;
+          }
+          if (event == PROBE_EVENT_PCSTOP)
+          {
+            pcstop_pair = pcepair;
+          }
+          if (event == PROBE_EVENT_PCDELTASTOP)
+          {
+            pcdelta_pair = pcepair;
           }
           break;
         } 
@@ -390,11 +498,11 @@ class PROBECONTROL
                      // its target
                   }
                   PROTO myproto = PROTO_Allocate( PIN_PARG(void), CALLINGSTD_DEFAULT,
-                   //"MyProbe", PIN_PARG(UINT32),  PIN_PARG(UINT32), PIN_PARG_END());
-                   "MyProbe", PIN_PARG_END());
+                   //"MyRTNProbe", PIN_PARG(UINT32),  PIN_PARG(UINT32), PIN_PARG_END());
+                   "MyRTNProbe", PIN_PARG_END());
                   if(pbverbose) cerr << "Created rtn" << ":" << RTN_Name(newRtn) <<  " address:0x" << hex << RTN_Address(newRtn) <<endl;
                   RTN_InsertCallProbed(newRtn, IPOINT_BEFORE, 
-                    (AFUNPTR)MyProbe, 
+                    (AFUNPTR)MyRTNProbe, 
                       IARG_PROTOTYPE, myproto,
                       IARG_UINT32, i, // index into rinfo[] 
                       IARG_END);
@@ -416,7 +524,7 @@ class PROBECONTROL
            if(RTN_Name(rtn) == trinfo->name)
            {
              PROTO myproto = PROTO_Allocate( PIN_PARG(void), CALLINGSTD_DEFAULT,
-              "MyProbe", PIN_PARG(UINT32), PIN_PARG_END());
+              "MyRTNProbe", PIN_PARG(UINT32), PIN_PARG_END());
              if(pbverbose)cerr << "found rtn" << ":" << RTN_Name(rtn) <<  " address:0x" << hex << RTN_Address(rtn) <<endl;
              if(!RTN_IsSafeForProbedInsertion(rtn))
              {
@@ -426,7 +534,7 @@ class PROBECONTROL
                 // its target
              }
              RTN_InsertCallProbed(rtn, IPOINT_BEFORE, 
-              (AFUNPTR)MyProbe, 
+              (AFUNPTR)MyRTNProbe, 
                 IARG_PROTOTYPE, myproto,
                 IARG_UINT32, i, // index into rinfo[] 
                 IARG_END);
