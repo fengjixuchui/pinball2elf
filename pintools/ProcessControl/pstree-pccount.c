@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "<pid>    :     pid of the root of a SIGSTOPPED pstree\n");
         fprintf(stderr, "<tid>    :     tid of the target thread\n");
         fprintf(stderr, "<pc>     :     instruction address of the target instruction\n");
-        fprintf(stderr, "<limit>  :     no. of occurrences of <pc> after which to stop\n");
+        fprintf(stderr, "<limit>  :     no. of occurrences of <pc> after which to stop (0 for completion)\n");
         return EXIT_FAILURE;
     }
 
@@ -50,14 +50,8 @@ int main(int argc, char *argv[])
 #endif
 
     /* make all tids tracees */
-    for (i=0; i < count; i++) {
-        ptrace_cmd(PTRACE_SEIZE, tout[i], 0, \
-                   (void *)(PTRACE_O_TRACECLONE | \
-                   PTRACE_O_TRACEFORK | \
-                   PTRACE_O_TRACEVFORK | \
-                   PTRACE_O_TRACEEXIT), \
-                   1, "main:ptrace_seize");
-    }
+    for (i=0; i < count; i++)
+        seize_tid(tout[i]);
 
     /* setup pc/count for the target thread */
     for (i=0; i < count; i++)
@@ -70,10 +64,9 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-
     /* restart tracees  */
     for (i=0; i < count; i++)
-        ptrace_cmd(PTRACE_CONT, tout[i], 0, 0, 1, "main:restart");
+        continue_tid(tout[i], pout[i]);
 
     /* main ptrace loop */
     while (1) {
@@ -87,7 +80,7 @@ int main(int argc, char *argv[])
             /* desired point reached: stop the tracees  */
             for (i=0; i < count; i++) {
                 if (!tdone[i])
-                    ptrace_cmd(PTRACE_INTERRUPT, tout[i], 0, 0, 1, "main:ptrace_interrupt");
+                    interrupt_tid(tout[i]);
             }
             /* output stats */
             fprintf (stdout, "paused pstree (root PID: %d) at TID: %d , IP: 0x%llx, after %llu occurrences\n", \
@@ -114,7 +107,7 @@ int main(int argc, char *argv[])
     /* detach from undetached tracees  */
     for (i=0; i < count; i++) {
         if (!tdone[i])
-            ptrace_cmd(PTRACE_DETACH, tout[i], 0, 0, 0, "main:ptrace_detach");
+            detach_tid(tout[i], pout[i]);
     }
 
     return EXIT_SUCCESS;
